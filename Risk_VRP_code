@@ -1,0 +1,209 @@
+import pandas as pd
+
+#CUSTO ACIDENTE ENCONTRADO A PARTIR DO ARQUIVO 'Accident_Cost_code'
+custo_acidente = [[  0.  , 637.88,  61.61, 336.68, 180.31, 508.67, 577.76,  58.63,
+        564.39, 442.38,   0.  ],
+       [637.75,   0.  , 113.66, 689.89, 285.71, 567.8 , 604.65, 712.02,
+        607.22, 178.88, 637.88],
+       [ 56.95, 114.7 ,   0.  , 346.91, 395.09, 230.16, 125.66,  62.37,
+        284.68, 124.44,  61.61],
+       [345.28, 677.03, 340.71,   0.  , 566.2 , 369.15, 376.54, 782.16,
+        330.51, 560.02, 336.68],
+       [173.15, 278.32, 392.83, 573.73,   0.  , 295.14, 190.13, 124.02,
+       465.72, 241.32, 180.31],
+       [513.24, 558.61, 219.31, 377.51, 303.39,   0.  , 127.67, 117.8 ,
+        535.77, 477.55, 508.67],
+       [583.51, 607.49, 122.98, 385.87, 182.59, 127.61,   0.  , 243.35,
+        566.57, 487.67, 577.76],
+       [ 65.62, 722.74,  61.25, 788.7 , 127.72, 115.88, 239.29,   0.  ,
+        513.75, 611.36,  58.63],
+       [556.34, 598.14, 283.38, 328.94, 464.88, 536.8 , 564.29, 509.03,
+          0.  , 392.31, 564.39],
+       [443.51, 175.74, 127.37, 553.38, 245.13, 476.63, 501.81, 613.43,
+        392.4 ,   0.  , 442.38],
+       [  0.  , 637.75,  56.95, 345.28, 173.15, 513.24, 583.51,  65.62,
+        556.34, 443.51,   0.  ]]
+ 
+ CUSTO LOGÍSTICO ENCONTRADO A PARTIR DE "www.qualp.com.br"
+custo_distancias = [
+     [ 0,  36.37,  93.48,  44.40, 110.30,  63.65,  54.87,  64.87,  75.99,  84.74,      0],
+     [  36.37, 0,  81.92,  60.04,  36.53,  90.76,  82.07,  94.47,  80.28,  48.36,  36.37],
+     [  93.48,  81.92, 0, 140.81,  36.32, 141.29,  91.80, 157.27, 161.05, 125.41,  93.48],
+     [  44.40,  60.04, 140.81, 0,  88.33,  92.94,  88.34,  37.12,  62.12, 110.14,  44.40],
+     [ 110.30,  36.53,  36.32,  88.33, 0, 160.05, 119.39, 176.03, 112.85,  80.72, 110.30],
+     [  63.65,  90.76, 141.29,  92.94, 160.05, 0,  41.64,  69.88, 130.86, 139.62,  63.65],
+     [  54.87,  82.07,  91.80,  88.34, 119.39,  41.64, 0, 112.99, 123.23, 131.99,  54.87],
+     [  64.87,  94.47, 157.27,  37.12, 176.03,  69.88, 112.99, 0,  85.15, 141.38,  64.87],
+     [  75.99,  80.28, 161.05,  62.12, 112.85, 130.86, 123.23,  85.15, 0,  46.76,  75.99],
+     [  84.74,  48.36, 125.41, 110.14,  80.72, 139.62, 131.99, 141.38,  46.76, 0,  84.74],
+     [ 0,  36.37,  93.48,  44.40, 110.30,  63.65,  54.87,  64.87,  75.99,  84.74,      0]
+     ]
+ 
+ # Origens
+lista1 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia','Limeira']
+# Destinos
+lista2 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia','Limeira']
+
+#Instalando pacote Python MIP
+pip install mip
+
+#Importanto os pacotes necessário
+import matplotlib.pyplot as plt
+from mip import *
+import networkx as nx
+
+#Classe para geração de callbacks e lazy constraints
+
+class Cuts(ConstrsGenerator):
+
+  def __init__(self, v, V, x): #Construtor
+    self.V = V
+    self.x = x
+    self.v = v
+    self.F = [(i, j) for i in v for j in V if j > i]
+  
+  def generate_constrs(self, model, depth, npasses):
+    x = model.translate(self.x)
+    V = self.V
+    F = self.F
+    v = self.v
+
+    #Passo 1: Gerar o grafo G
+    G = nx.DiGraph()
+    for i in v:
+      for j in V - {i} - {0}:
+        G.add_edge(i, j, capacity=x[i,j].x)
+    
+    #Passo 2: Encontrar um corte mínimo < 1
+    for (i, j) in F:
+      mc, (S, S_) = nx.minimum_cut(G,i,j)
+
+      if mc <= 0.99:
+        model += xsum(x[i, j] for i in S for j in S - {i}) <= len(S) - 1
+        break
+ 
+#Resolvendo o Modelo
+l = 0
+alfa = np.arange(0,1.05,0.05)
+
+resultados_distancia = np.zeros(len(alfa))
+resultados_acidente = np.zeros(len(alfa))
+resultados_final = np.zeros(len(alfa))
+num_variaveis = np.zeros(len(alfa))
+num_restricoes = np.zeros(len(alfa))
+for o in alfa:
+  # Restrição de demanda
+  d = [0, 3, 8, 3, 3, 14, 11, 9, 7, 11, 0]
+    
+  # Quantidade de Veículos
+  qtde_veiculos = 3
+
+  # Capacidade dos Veículos
+  Cap_veículos = 24
+
+  # Quantidade de cidades
+  cidades = len(custo_distancias)
+  V = set(range(cidades))
+  v = set(range(cidades-1))
+    
+  # Origens
+  lista1 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia','Limeira']
+    
+  # Destinos
+  lista2 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia','Limeira']
+
+  # Inicializa o solver de Programação Linear Inteira Mista
+  vrp = Model(sense=minimize, solver_name=CBC)
+
+  # Definindo as variáveis do problema
+  rota = {(k,i,j): vrp.add_var(var_type=BINARY) 
+          for k in range(qtde_veiculos) for i in V for j in V - {i}}
+
+  #Definindo a variável para restrição MTZ
+  u = {(k,i): vrp.add_var(var_type=INTEGER)
+        for k in range(qtde_veiculos)
+        for i in V}
+
+  #Restrição 1 - Condição para que exista uma rota entre i e j e que passe apenas um caminhão
+  for i in v - {0}:
+    vrp += xsum(rota[k,i,j] for k in range(qtde_veiculos) for j in V - {i} - {0}) == 1
+
+  #Restrição 2 - Condição para a capacidade dos veículos
+  for k in range(qtde_veiculos):
+    vrp += xsum(d[j] * rota[k,i,j] for i in v for j in V - {i} - {0}) <= Cap_veículos
+
+  #Restrição 3 - Condição para que os três veículos saiam do depósito 
+  for k in range(qtde_veiculos):
+    vrp += xsum(rota[k,0,j] for j in V - {0}) == 1
+
+  #Restrição 4 - Condição de que os três veículos retornem ao depósito
+  for k in range(qtde_veiculos):
+    vrp += xsum(rota[k,i,cidades-1] for i in v) == 1
+
+  #Restrição 5 - Condição para que tudo que entra seja igual a tudo que sai
+  for h in v - {0}:
+    if h != (cidades - 1):
+      for k in range(qtde_veiculos):
+        vrp += xsum(rota[k,i,h] for i in v - {h})-xsum(rota[k,h,j] for j in V - {h} - {0}) == 0
+
+  #Restrição 6 - Evitar Sub-rotas: MTZ
+  for k in range(qtde_veiculos):
+    for i in v - {0}:
+      for j in V - {0} - {i}:
+        vrp += u[k,i] - u[k,j] + cidades * rota[k,i,j] <= cidades - 1
+
+  #Restrição 7 - Evitar que saia do depósito e chegue no depósito
+  vrp += xsum(rota[(k,0,cidades-1)] for k in range(qtde_veiculos)) == 0
+
+  #Função Objetivo
+  vrp.objective = minimize(
+      xsum(rota[k,i,j] * custo_distancias[i][j] * (1 - o) + rota[k,i,j] * custo_acidente[i][j] * o
+          for k in range(qtde_veiculos)
+              for i in v
+                for j in V - {0} - {i}
+      )
+  )
+
+  vrp.cuts_generator = Cuts (v, V, rota)
+  vrp.lazy_constrs_generator = Cuts (v, V, rota)
+  vrp.optimize()
+
+  #Número variáveis
+  num_variaveis[l] = int(vrp.num_cols)
+
+  #Número restrições
+  num_restricoes[l] = int(vrp.num_rows)
+
+  # Resultados do problema
+  solucao = np.zeros(cidades*cidades*qtde_veiculos).reshape(qtde_veiculos,cidades,cidades)
+  for k in range(qtde_veiculos):
+    for i in v:
+      for j in V - {i} - {0}:
+        solucao[k,i,j] = rota[k, i, j].x
+  resultados_distancia[l] = np.sum(solucao * custo_distancias)
+  resultados_acidente[l] = np.sum(solucao * custo_acidente)
+  resultados_final[l] = vrp.objective_value
+  l = l + 1
+
+
+#GRÁFICO PARA OS TRÊS RESULTADOS
+plt.figure(figsize=(10, 6))
+plt.xlabel('Alfa',fontsize=12)
+ax1 = plt.plot(alfa,resultados_distancia,color='red',marker='o',label='Logistics Cost')
+plt.grid(axis='x')
+plt.ylabel('Logistics Cost',fontsize=12)
+plt.yticks(fontsize=12)
+plt.ylim([728,970])
+plt.legend(fontsize=12,loc=9)
+plt.twinx()
+plt.plot(alfa,resultados_acidente,marker='s',label='Risk Cost')
+plt.plot(alfa,resultados_final2,marker='v',label='Total Cost')
+plt.xticks(np.arange(0,1.05,0.05),fontsize=12)
+plt.xlim([0,1])
+plt.ylabel('Risk Cost / Total Cost ',fontsize=12)
+plt.yticks(fontsize=12)
+plt.legend(fontsize=12,bbox_to_anchor=(0.387, 0.9), loc=2, borderaxespad=0.)
+#plt.legend(fontsize=12,loc=1)
+plt.savefig('teste.png', format='png')
+
+plt.show
