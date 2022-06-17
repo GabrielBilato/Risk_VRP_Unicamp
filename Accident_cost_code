@@ -1,0 +1,146 @@
+#Instalando o pacote responsável pela importação de dados
+!pip install xlrd
+
+#Use to import pandas
+import pandas as pd
+#Use to import the file into google Colab drive
+from google.colab import files 
+#Use to import io, which opens the file from the Colab drive
+import io
+#Geração de dados aleatórios
+from scipy import random
+#importando Numpy
+import numpy as np
+
+#Upload Accident probability of each node.xlsx
+uploaded_1 = files.upload()
+#Leitura dos dados fornecidos pela importação de dados
+df1 = pd.read_excel("Accident probability of each node.xlsx")
+df1
+
+#Upload Percentage per product value.xlsx
+uploaded_2 = files.upload()
+
+#Leitura dos dados fornecidos pela importação de dados
+df2 = pd.read_excel("Percentage per product value.xlsx")
+df2
+
+
+# Calculate the accident probability of each route
+# Origens
+lista1 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia']
+# Destinos
+lista2 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia']
+
+cidades = 10
+prob_acidente = np.zeros(cidades*cidades).reshape(cidades,cidades)
+
+l=0
+for i in range(cidades):
+  for j in range(cidades):
+    if i != j:
+      if j > i:
+        prob_acidente[i][j] = df1["Accident Prob"][l] 
+        l=l+1
+
+l=0
+for j in range(cidades):
+  for i in range(cidades):
+    if i != j:
+      if i > j:
+        prob_acidente[i][j] = df1["Accident Prob"][l] 
+        l=l+1
+
+df = pd.DataFrame(data=prob_acidente, index=lista1, columns=lista2)
+
+import seaborn as sns
+cm = sns.light_palette("brown", as_cmap=True)
+
+s = df.style.background_gradient(cmap=cm)
+s
+
+
+#Nesta parte, os dados obtidos nas etapas anteriores são tratados 
+#para que possa ser usado na etapa do Método de Monte Carlo. Aqui 
+#também colocou-se a quantidade de cidades mais um para a posterior resolução do VRP.
+n = len(df2) + 1
+prob_valores = np.zeros(n)
+for i in range(n):
+  if i == 0:
+    prob_valores[i] = 1
+  else:
+    prob_valores [i] = 0.01 * df2["Evento (Percent)"][i-1]
+
+#Valores de mercadorias envolvidos em acidentes
+valores = np.array([0,200000,300000,500000,1000000,1500000])
+
+
+#Monte Carlo Simulation
+#Quantidade de cidades para o VRP
+n = cidades + 1
+m = n * n
+
+#Número de iterações
+iteracoes = 1000000
+
+custo_acidente = np.zeros(m).reshape(n,n)
+for i in range(cidades):
+  for j in range(cidades):
+    if j > i: #Estratégia para reduzir tempo de execução do Monte Carlo
+      dist_prob = np.zeros(len(prob_valores))
+      for k in range(len(prob_valores)):
+        if k == 0:
+          dist_prob[k] = 1 - prob_valores[k]*prob_acidente[i][j]
+        else:
+          dist_prob[k] = prob_valores[k]*prob_acidente[i][j]
+
+      acumulado = np.zeros(len(dist_prob))
+      soma = 0
+      for l in range(len(dist_prob)):
+        soma = soma + dist_prob[l]
+        acumulado[l] = soma
+
+      w = np.zeros(iteracoes)
+      for l in range(iteracoes):
+          aleatorio = random.uniform(0,1)
+          if aleatorio <= acumulado[0]:
+            w[l] = valores[0]
+          elif (aleatorio > acumulado[0])and(aleatorio <= acumulado[1]):
+            w[l] = valores[1]
+          elif (aleatorio > acumulado[1])and(aleatorio <= acumulado[2]):
+            w[l] = valores[2]
+          elif (aleatorio > acumulado[2])and(aleatorio <= acumulado[3]):
+            w[l] = valores[3]
+          elif (aleatorio > acumulado[3])and(aleatorio <= acumulado[4]):
+            w[l] = valores[4]
+          elif (aleatorio > acumulado[4])and(aleatorio <= acumulado[5]):
+            w[l] = valores[5]  
+          else:
+            w[l] = valores[6]
+
+      w = 0.1 * w
+
+      custo_acidente[i][j] = np.mean(w)
+
+for i in range(cidades):
+  for j in range(cidades):
+    if j > i:
+      custo_acidente[j][i] = custo_acidente[i][j]
+
+#Imprimindo a solução completa para ser utilizada no VRP
+o = len(custo_acidente) - 1
+for j in range(len(custo_acidente)):
+  custo_acidente[j][o] = custo_acidente[0][j]
+for j in range(len(custo_acidente)):
+  custo_acidente[o][j] = custo_acidente[j][0]
+
+
+#TABELA COM OS CUSTOS RISCOS ENCONTRADOS A PARTIR DO MONTE CARLO
+import pandas as pd
+# Origens
+lista1 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia','Limeira']
+# Destinos
+lista2 = ['Limeira','Cosmópolis','Mogi Mirim','Santa Barbara','Holambra','Rio Claro','Araras','Piracicaba','Sumaré','Paulínia','Limeira']
+df = pd.DataFrame(data=custo_acidente, index=lista1, columns=lista2)
+
+df
